@@ -1,0 +1,70 @@
+{
+  "snacks": [
+    {
+      "name": "Сырные палочки 6шт",
+      "price": 230,
+      "description": "Сыр моцарелла в панировке.",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738434620463,
+      "photoId": "AgACAgIAAxkBAAID9meeWdWPpHOWhCW2M0OCOK3ldFyfAALb5zEb5_XxSK6f2XSFwf5AAQADAgADeQADNgQ",
+      "photoUrl": "http://localhost:8000/images/1738434619883_AgACAgIAAxkBAAID9meeWdWPpHOWhCW2M0OCOK3ldFyfAALb5zEb5_XxSK6f2XSFwf5AAQADAgADeQADNgQ.jpg"
+    },
+    {
+      "name": "Крылышки 6шт",
+      "price": 300,
+      "description": "Куриные крылышки в панировке.",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738435258786,
+      "photoId": "AgACAgIAAxkBAAIEAAFnnlpAa5UzmWKWl4hQTfzj-thfKQAC3OcxG-f18UgUTBJrAAGP-csBAAMCAAN5AAM2BA",
+      "photoUrl": "http://localhost:8000/images/1738435258331_AgACAgIAAxkBAAIEAAFnnlpAa5UzmWKWl4hQTfzj-thfKQAC3OcxG-f18UgUTBJrAAGP-csBAAMCAAN5AAM2BA.jpg"
+    },
+    {
+      "name": "Роял фри",
+      "price": 250,
+      "description": "Картофель фри, бекон, сырный соус, барбекю соус.",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738435282620,
+      "photoId": "AgACAgIAAxkBAAIEB2eeWl6xcuQNj7YvNsydncQX0BMNAALd5zEb5_XxSBv3cYBKoFs0AQADAgADeQADNgQ",
+      "photoUrl": "http://localhost:8000/images/1738435282215_AgACAgIAAxkBAAIEB2eeWl6xcuQNj7YvNsydncQX0BMNAALd5zEb5_XxSBv3cYBKoFs0AQADAgADeQADNgQ.jpg"
+    },
+    {
+      "name": "Картофель фри",
+      "price": 130,
+      "description": "Картофель фри, соль, специи.",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738435308028,
+      "photoId": "AgACAgIAAxkBAAIE7GeeauqegZ5YdJe_dU_qo7LzE-3mAAIk6DEb5_XxSPTuUyt0GM9zAQADAgADeQADNgQ",
+      "photoUrl": "http://localhost:8000/images/1738435307265_AgACAgIAAxkBAAIE7GeeauqegZ5YdJe_dU_qo7LzE-3mAAIk6DEb5_XxSPTuUyt0GM9zAQADAgADeQADNgQ.jpg"
+    },
+    {
+      "name": "Наггетсы 5шт",
+      "price": 120,
+      "description": "Куриное Наггетсы в панировки",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738436723998,
+      "photoId": "AgACAgIAAxkBAAIFE2eecHPYc-37RLLVwgZNVXMCSEU7AAJc6DEb5_X5SN3o-we6vjxsAQADAgADeQADNgQ",
+      "photoUrl": "http://localhost:8000/images/1738436723446_AgACAgIAAxkBAAIFE2eecHPYc-37RLLVwgZNVXMCSEU7AAJc6DEb5_X5SN3o-we6vjxsAQADAgADeQADNgQ.jpg"
+    }
+  ],
+  "mainMenu": [
+    {
+      "name": "Гирос острый",
+      "price": 320,
+      "description": "Греческая пита, куриное филе, помидор, картофель фри, соус острый.",
+      "ingredients": [],
+      "removableIngredients": [],
+      "id": 1738436618042,
+      "photoId": "AgACAgIAAxkBAAIFB2eecAlTotRN4rxVb6n9e69g0-BzAAJa6DEb5_X5SFnL_vrqYdDcAQADAgADeQADNgQ",
+      "photoUrl": "http://localhost:8000/images/1738436617374_AgACAgIAAxkBAAIFB2eecAlTotRN4rxVb6n9e69g0-BzAAJa6DEb5_X5SFnL_vrqYdDcAQADAgADeQADNgQ.jpg"
+    }
+  ],
+  "drinks": [],
+  "sauces": [],
+  "ingredients": [],
+  "currentCategory": null
+}
