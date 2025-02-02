@@ -5,6 +5,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const db = require('./db/database');
 
 const token = process.env.TG_TOKEN;
 
@@ -13,11 +14,23 @@ const webAppUrl = 'https://jazzy-sunflower-46eab1.netlify.app/';
 const bot = new TelegramBot(token, {polling: true});
 const app = express();
 
+// Добавляем конфигурацию CORS
+const corsOptions = {
+    origin: 'https://jazzy-sunflower-46eab1.netlify.app/', // URL вашего React приложения
+    methods: ['GET', 'POST', 'DELETE', 'UPDATE', 'PUT', 'PATCH'],
+    credentials: true
+};
+
+// Применяем CORS middleware
+app.use(cors(corsOptions));
+app.use(express.json());
+
 // Добавим состояние для отслеживания процесса добавления товара
 const userStates = {};
 
-// Добавляем путь к файлу для хранения данных
+// Обновляем пути для работы с файлами
 const dbFilePath = path.join(__dirname, 'data', 'menuDB.json');
+const imagesDir = path.join(__dirname, 'images');
 
 // Добавим структуру для хранения заказов
 const ordersDB = {
@@ -28,52 +41,148 @@ const ordersDB = {
 function ensureDataDirectory() {
     const dataDir = path.join(__dirname, 'data');
     if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir);
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+    
+    // Создаем директорию для изображений, если её нет
+    if (!fs.existsSync(imagesDir)) {
+        fs.mkdirSync(imagesDir, { recursive: true });
     }
 }
 
-// Функция для загрузки данных из файла
-function loadMenuDB() {
+// Заменяем функцию loadMenuDB на получение данных из MySQL
+async function loadMenuDB() {
     try {
-        ensureDataDirectory();
-        if (fs.existsSync(dbFilePath)) {
-            const data = fs.readFileSync(dbFilePath, 'utf8');
-            return JSON.parse(data);
+        const products = await db.query(`
+            SELECT p.*, c.slug as category
+            FROM products p
+            JOIN categories c ON p.category_id = c.id
+        `);
+
+        // Загружаем ингредиенты из базы
+        const ingredients = await db.query('SELECT * FROM ingredients');
+        console.log('Loaded ingredients from database:', ingredients);
+        
+        // Получаем связи продуктов с ингредиентами
+        const productIngredients = await db.query(`
+            SELECT pi.*, i.name, i.price 
+            FROM product_ingredients pi
+            JOIN ingredients i ON pi.ingredient_id = i.id
+        `);
+
+        // Формируем структуру как в JSON
+        const menuDB = {
+            snacks: [],
+            mainMenu: [],
+            drinks: [],
+            sauces: [],
+            ingredients: ingredients,
+            currentCategory: null
+        };
+
+        // Распределяем продукты по категориям
+        products.forEach(product => {
+            const productIngrs = productIngredients.filter(pi => pi.product_id === product.id);
+            
+            const formattedProduct = {
+                id: product.id,
+                name: product.name,
+                price: parseFloat(product.price),
+                description: product.description,
+                photoId: product.photo_id,
+                photoUrl: product.photo_url,
+                ingredients: productIngrs.filter(pi => !pi.is_removable),
+                removableIngredients: productIngrs.filter(pi => pi.is_removable)
+            };
+
+            menuDB[product.category].push(formattedProduct);
+        });
+
+        return menuDB;
+    } catch (error) {
+        console.error('Error loading menu from database:', error);
+        throw error;
+    }
+}
+
+// Заменяем функцию saveMenuDB на сохранение в MySQL
+async function saveMenuDB(menuData) {
+    try {
+        // Начинаем транзакцию
+        const connection = await db.pool.getConnection();
+        await connection.beginTransaction();
+
+        try {
+            // Очищаем существующие данные
+            await connection.execute('DELETE FROM product_ingredients');
+            await connection.execute('DELETE FROM products');
+
+            // Сохраняем продукты по категориям
+            for (const [category, products] of Object.entries(menuData)) {
+                if (category !== 'currentCategory' && category !== 'ingredients') {
+                    const [categoryRow] = await connection.execute(
+                        'SELECT id FROM categories WHERE slug = ?',
+                        [category]
+                    );
+
+                    if (categoryRow.length > 0) {
+                        const categoryId = categoryRow[0].id;
+
+                        for (const product of products) {
+                            // Сохраняем продукт
+                            await connection.execute(
+                                `INSERT INTO products 
+                                (id, name, price, description, photo_id, photo_url, category_id)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                                [
+                                    product.id,
+                                    product.name,
+                                    product.price,
+                                    product.description,
+                                    product.photoId,
+                                    product.photoUrl,
+                                    categoryId
+                                ]
+                            );
+
+                            // Сохраняем ингредиенты продукта
+                            for (const ing of product.ingredients || []) {
+                                await connection.execute(
+                                    `INSERT INTO product_ingredients 
+                                    (product_id, ingredient_id, is_removable)
+                                    VALUES (?, ?, false)`,
+                                    [product.id, ing.id]
+                                );
+                            }
+
+                            // Сохраняем удаляемые ингредиенты
+                            for (const ing of product.removableIngredients || []) {
+                                await connection.execute(
+                                    `INSERT INTO product_ingredients 
+                                    (product_id, ingredient_id, is_removable)
+                                    VALUES (?, ?, true)`,
+                                    [product.id, ing.id]
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            await connection.commit();
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
         }
-        // Если файл не существует, возвращаем начальную структуру
-        return {
-            snacks: [],
-            mainMenu: [],
-            drinks: [],
-            sauces: [],
-            ingredients: [],
-            currentCategory: null
-        };
     } catch (error) {
-        console.error('Error loading menuDB:', error);
-        return {
-            snacks: [],
-            mainMenu: [],
-            drinks: [],
-            sauces: [],
-            ingredients: [],
-            currentCategory: null
-        };
+        console.error('Error saving menu to database:', error);
+        throw error;
     }
 }
 
-// Функция для сохранения данных в файл
-function saveMenuDB() {
-    try {
-        ensureDataDirectory();
-        fs.writeFileSync(dbFilePath, JSON.stringify(menuDB, null, 2));
-        console.log('MenuDB saved successfully');
-    } catch (error) {
-        console.error('Error saving menuDB:', error);
-    }
-}
-
-// Функция сохранения заказов
+// Обновляем путь для сохранения заказов
 function saveOrders() {
     try {
         fs.writeFileSync(
@@ -85,8 +194,24 @@ function saveOrders() {
     }
 }
 
+// Добавляем логирование при старте сервера
+console.log('Server starting...');
+console.log('Current directory:', __dirname);
+console.log('DB file path:', dbFilePath);
+
+// Добавим проверку подключения к базе при старте
+db.testConnection().then(isConnected => {
+    if (isConnected) {
+        console.log('Successfully connected to database');
+    } else {
+        console.error('Failed to connect to database');
+        process.exit(1);
+    }
+});
+
 // Инициализируем menuDB из файла
 const menuDB = loadMenuDB();
+console.log('Initialized menuDB:', menuDB);
 
 // Загрузка заказов при старте
 try {
@@ -121,7 +246,6 @@ const categoryNames = {
 };
 
 // Создаем папку для изображений в tg-web-app-react-master, если её нет
-const imagesDir = path.join(__dirname, '../src/images');
 if (!fs.existsSync(imagesDir)) {
     fs.mkdirSync(imagesDir);
 }
@@ -329,7 +453,7 @@ bot.on('callback_query', async (query) => {
             const itemName = nameParts.join('_');
             
             menuDB[removeCategory] = menuDB[removeCategory].filter(item => item.name !== itemName);
-            saveMenuDB(); // Сохраняем изменения
+            saveMenuDB(menuDB); // Сохраняем изменения
             
             await bot.sendMessage(chatId, `✅ Товар ${itemName} успешно удален из категории ${removeCategory}`, {
                 reply_markup: {
@@ -393,8 +517,22 @@ bot.on('callback_query', async (query) => {
         // Обработка удаления ингредиента
         case (query.data.match(/^delete_ingredient_/) || {}).input:
             const ingredientId = query.data.split('_')[2];
-            menuDB.ingredients = menuDB.ingredients.filter(ing => ing.id !== ingredientId);
-            saveMenuDB(); // Сохраняем изменения
+            try {
+                // Удаляем из базы данных
+                await db.query('DELETE FROM ingredients WHERE id = ?', [ingredientId]);
+                
+                // Удаляем из menuDB
+                menuDB.ingredients = menuDB.ingredients.filter(ing => ing.id !== ingredientId);
+                
+                await bot.sendMessage(chatId, 'Ингредиент успешно удален!', {
+                    reply_markup: {
+                        inline_keyboard: [[{text: '◀️ Назад', callback_data: 'admin_ingredients'}]]
+                    }
+                });
+            } catch (error) {
+                console.error('Error deleting ingredient:', error);
+                await bot.sendMessage(chatId, 'Ошибка при удалении ингредиента.');
+            }
             break;
 
         // Добавим обработку действий с заказом
@@ -581,6 +719,22 @@ bot.on('message', async (msg) => {
         }
     }
 
+    // Функция для сохранения ингредиента в базу данных
+    async function saveIngredient(ingredient) {
+        try {
+            await db.query(
+                `INSERT INTO ingredients (id, name, price) 
+                 VALUES (?, ?, ?)`,
+                [ingredient.id, ingredient.name, ingredient.price]
+            );
+            console.log('Ingredient saved to database:', ingredient);
+            return true;
+        } catch (error) {
+            console.error('Error saving ingredient to database:', error);
+            return false;
+        }
+    }
+
     // Обработка добавления ингредиента
     if (state && state.state === 'AWAITING_INGREDIENT_DATA' && text) {
         try {
@@ -590,28 +744,34 @@ bot.on('message', async (msg) => {
                 return;
             }
 
-            // Убедимся, что массив ингредиентов существует
-            if (!menuDB.ingredients) {
-                menuDB.ingredients = [];
-            }
-
             const newIngredient = {
                 id: Date.now().toString(),
                 name: name.trim(),
                 price: Number(price)
             };
 
-            menuDB.ingredients.push(newIngredient);
-            saveMenuDB(); // Сохраняем изменения
+            // Сохраняем в базу данных
+            const saved = await saveIngredient(newIngredient);
             
-            console.log('Added ingredient:', newIngredient);
-            console.log('Current ingredients:', menuDB.ingredients);
-
-            await bot.sendMessage(chatId, `✅ Ингредиент "${name}" успешно добавлен!`, {
-                reply_markup: {
-                    inline_keyboard: [[{text: '◀️ Назад', callback_data: 'admin_ingredients'}]]
+            if (saved) {
+                // Обновляем menuDB только после успешного сохранения в базу
+                if (!menuDB.ingredients) {
+                    menuDB.ingredients = [];
                 }
-            });
+                menuDB.ingredients.push(newIngredient);
+                
+                console.log('Added ingredient:', newIngredient);
+                console.log('Current ingredients:', menuDB.ingredients);
+
+                await bot.sendMessage(chatId, `✅ Ингредиент "${name}" успешно добавлен!`, {
+                    reply_markup: {
+                        inline_keyboard: [[{text: '◀️ Назад', callback_data: 'admin_ingredients'}]]
+                    }
+                });
+            } else {
+                await bot.sendMessage(chatId, 'Ошибка при сохранении ингредиента.');
+            }
+            
             delete userStates[chatId];
         } catch (e) {
             console.error('Error adding ingredient:', e);
@@ -658,7 +818,7 @@ bot.on('photo', async (msg) => {
             }
 
             menuDB[state.category].push(itemData);
-            saveMenuDB(); // Сохраняем изменения
+            saveMenuDB(menuDB); // Сохраняем изменения
 
             console.log('Added item with ingredients:', itemData);
 
@@ -781,73 +941,84 @@ ${orderDetails}
     }
 });
 
-// API эндпоинты для работы с товарами
-app.get('/api/products', (req, res) => {
+// Получение продуктов
+app.get('/api/products', async (req, res) => {
     try {
-        // Отдаём данные из menuDB
-        const products = {
+        const menuDB = await loadMenuDB();
+        console.log('Sending products to client:', menuDB); // Добавим для отладки
+        res.json({
             snacks: menuDB.snacks || [],
             mainMenu: menuDB.mainMenu || [],
             drinks: menuDB.drinks || [],
             sauces: menuDB.sauces || []
-        };
-        res.json(products);
+        });
     } catch (error) {
         console.error('Error getting products:', error);
+        res.status(500).json({ 
+            error: 'Internal server error',
+            details: error.message 
+        });
+    }
+});
+
+// Добавление продукта
+app.post('/api/products', async (req, res) => {
+    try {
+        const { category, name, price, description, photoUrl, photoId } = req.body;
+        
+        const [categoryRow] = await db.query(
+            'SELECT id FROM categories WHERE slug = ?',
+            [category]
+        );
+
+        if (categoryRow.length === 0) {
+            return res.status(400).json({ error: 'Invalid category' });
+        }
+
+        const productId = Date.now();
+        await db.query(
+            `INSERT INTO products 
+            (id, name, price, description, photo_id, photo_url, category_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [productId, name, price, description, photoId, photoUrl, categoryRow[0].id]
+        );
+
+        res.status(201).json({
+            id: productId,
+            name,
+            price,
+            description,
+            photoUrl,
+            photoId,
+            category
+        });
+    } catch (error) {
+        console.error('Error adding product:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-app.post('/api/products', async (req, res) => {
+// Удаление продукта
+app.delete('/api/products/:category/:id', async (req, res) => {
     try {
-        const { category, name, price, description, photoUrl } = req.body;
+        const { id } = req.params;
         
-        const newItem = {
-            id: Date.now(),
-            name,
-            price: Number(price),
-            description,
-            photoUrl,
-            // Добавляем стандартные ингредиенты для всех категорий
-            ingredients: [
-                { id: 'cheese', name: 'Сыр', price: 40 },
-                { id: 'jalapeno', name: 'Халапеньо', price: 40 },
-                { id: 'bacon', name: 'Бекон', price: 40 },
-                { id: 'spicySauce', name: 'Острый соус', price: 0 }
-            ],
-            removableIngredients: []
-        };
-
-        // Для определенных блюд добавляем возможность убрать лук
-        if (['Гамбургер', 'Шаурма на тарелке', 'Сендвич'].includes(name)) {
-            newItem.removableIngredients = [
-                { id: 'onion', name: 'Лук' }
-            ];
-        }
-
-        menuDB[category].push(newItem);
-        res.status(201).json(newItem);
-    } catch (e) {
-        res.status(500).json({ error: 'Ошибка при добавлении товара' });
-    }
-});
-
-app.delete('/api/products/:category/:id', (req, res) => {
-    try {
-        const { category, id } = req.params;
-        menuDB[category] = menuDB[category].filter(item => item.id !== Number(id));
+        await db.query('DELETE FROM product_ingredients WHERE product_id = ?', [id]);
+        await db.query('DELETE FROM products WHERE id = ?', [id]);
+        
         res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: 'Ошибка при удалении товара' });
+    } catch (error) {
+        console.error('Error deleting product:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// Добавляем раздачу статических файлов
-app.use('/images', express.static(path.join(__dirname, '../src/images')));
+// Добавляем раздачу статических файлов с нового пути
+app.use('/images', express.static(imagesDir));
 
 // Добавляем автоматическое сохранение каждые 5 минут
 setInterval(() => {
-    saveMenuDB();
+    saveMenuDB(menuDB);
 }, 5 * 60 * 1000);
 
 // В начале файла после создания бота
@@ -883,6 +1054,11 @@ if (!process.env.ADMIN_ID) {
 console.log('Bot configuration loaded successfully');
 console.log('Admin ID:', process.env.ADMIN_ID);
 
-const PORT = 8000;
+// Обновляем порт из .env
+const PORT = process.env.PORT || 8000;
 
-app.listen(PORT, () => console.log('server started on PORT ' + PORT))
+// Добавляем логирование при запуске сервера
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log('CORS enabled for:', corsOptions.origin);
+});
